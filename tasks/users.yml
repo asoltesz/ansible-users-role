@@ -1,0 +1,50 @@
+---
+- name: Set password for root
+  user:
+    name: root
+    password: "{{ user_password }}"
+    generate_ssh_key: yes
+    shell: /bin/bash
+
+- name: Create deploy user
+  user:
+    name: deploy
+    password: "{{ user_password }}"
+    generate_ssh_key: yes
+    shell: /bin/bash
+
+- name: Add authorized deploy keys
+  authorized_key:
+    user: deploy
+    key: "{{ lookup('file', item) }}"
+  with_items: '{{ ssh_public_key_files }}'
+
+- name: Remove sudo group rights
+  lineinfile:
+    dest: /etc/sudoers
+    regexp: "^%sudo"
+    state: absent
+
+- name: Add deploy user to sudoers
+  lineinfile:
+    dest: /etc/sudoers
+    regexp: "deploy ALL"
+    line: "deploy ALL=(ALL) NOPASSWD: ALL"
+    state: present
+
+- name: Ensure bash_profile exists for user deploy
+  file:
+    path: "/home/deploy/.bash_profile"
+    state: touch
+    owner: deploy
+    group: deploy
+
+- name: Enable login notification
+  blockinfile:
+    path: "/home/deploy/.bash_profile"
+    block: |
+      IP=`echo $SSH_CLIENT | awk '{ print $1}'`
+      SUBJECT="$HOSTNAME: Shell Access from $IP"
+      DETAILS=`who`
+
+      echo -n "$DETAILS" | mail -s "$SUBJECT" {{ notifications_email }}
